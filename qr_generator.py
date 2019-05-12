@@ -5,15 +5,28 @@ import json
 def main(string, correctionLevel):
     root = tkinter.Tk()
     root.geometry('300x300')
-    root.resizable(False, False)
-    canvas = tkinter.Canvas(root, width=300, height=300)
+    canvas = tkinter.Canvas(root,  bg='white')
+    canvas.pack(fill='both', expand=1)
     createQRCodeIn(canvas, string, correctionLevel)
     return 0
 
 def createQRCodeIn(canvas, string, correctionLevel):
     encodedString = encodeWithEfficientMode(string, correctionLevel)
-    print(encodedString)
-    
+    messagePolynomial = createMessagePolynomial(encodedString)
+    generatorPolynomial = createGeneratorPolynomial(encodedString)
+    generateErrorCorrectionCodeword(messagePolynomial, generatorPolynomial)
+
+def createMessagePolynomial(string):
+    message = []
+    for i in range(0, len(string), 8):
+        message.append([int(string[i:i+8], 2), len(string)//8-i//8-1])
+    return message
+
+def createGeneratorPolynomial(string):
+    pass
+
+def generateErrorCorrectionCodeword(message, generator):
+    pass
 
 def encodeWithEfficientMode(string, correctionLevel):
     if isNumeric(string):
@@ -106,7 +119,7 @@ def characterCount(length, version, mode):
 
 def addNeededZeros(bitString, version, correctionLevel):
     numberOfCodewords = json.loads(open('numberOfCodewords.json').read())
-    requiredBits = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])]*8
+    requiredBits = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][0]*8
     bitString += '0'*min(4, requiredBits-len(bitString))
     bitString += '0'*(8-len(bitString)%8)
     for i in range((requiredBits - len(bitString))//8):
@@ -115,7 +128,31 @@ def addNeededZeros(bitString, version, correctionLevel):
         else:
             bitString += '00010001'
     return bitString
-    
+
+def multiplyPolynoms(polynom1, polynom2):
+    #a polynom (a^0x^2-a^1x^0) is represented as [[0,2],[1,0]]
+    result = []
+    for i in polynom1:
+        for j in polynom2:
+            result.append([i[0]+j[0], i[1]+j[1]])
+    result2 = sorted(result, key=lambda x:x[1], reverse=True)
+    result = [[log(result2[0][0]), result2[0][1]]]
+    for i in result2[1:]:
+        if result[-1][1] == i[1]:
+            result[-1][0] = (result[-1][0]) ^ (log(i[0]))
+        else:
+            result.append([log(i[0]), i[1]])
+    for i in range(len(result)):
+        result[i][0] = antilog(result[i][0])
+    return result
+
+def log(number):
+    table = json.loads(open('log.json').read())
+    return table[number%255]
+
+def antilog(number):
+    table = json.loads(open('antilog.json').read())
+    return table[number-1%255]
 
 def numericEncoding(string, version, correctionLevel):
     splitString = [str(int(string[start:start+3])) for start in range(0, len(string), 3)]
@@ -152,4 +189,4 @@ def kanjiEncoding(string, version, correctionLevel):
 
 
 if __name__=="__main__":
-    main('HELLO WORLD', 2)
+    main('HELLO WORLD', 1)
