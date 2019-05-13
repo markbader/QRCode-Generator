@@ -11,35 +11,65 @@ def main(string, correctionLevel):
     return 0
 
 def createQRCodeIn(canvas, string, correctionLevel):
-    encodedString = encodeWithEfficientMode(string, correctionLevel)
-    messagePolynomial = createMessagePolynomial(encodedString)
-    generatorPolynomial = createGeneratorPolynomial(encodedString)
-    generateErrorCorrectionCodeword(messagePolynomial, generatorPolynomial)
+    qrCode = createQRCode(string, correctionLevel)
+    
 
-def createMessagePolynomial(string):
-    message = []
-    for i in range(0, len(string), 8):
-        message.append([int(string[i:i+8], 2), len(string)//8-i//8-1])
-    return message
-
-def createGeneratorPolynomial(string):
-    pass
-
-def generateErrorCorrectionCodeword(message, generator):
-    pass
-
-def encodeWithEfficientMode(string, correctionLevel):
+def createQRCode(string, correctionLevel):
     if isNumeric(string):
-        return numericEncoding(string, chooseVersion(string, '0001', correctionLevel), correctionLevel)
+        version = chooseVersion(string, '0001', correctionLevel)
+        encodedString = numericEncoding(string, version, correctionLevel)
     elif isAlphanumeric(string):
-        return alphanumericEncoding(string, chooseVersion(string, '0010', correctionLevel), correctionLevel)
+        version = chooseVersion(string, '0010', correctionLevel)
+        encodedString = alphanumericEncoding(string, version, correctionLevel)
     elif isByte(string):
-        return byteEncoding(string, chooseVersion(string, '0100', correctionLevel), correctionLevel)
+        version = chooseVersion(string, '0100', correctionLevel)
+        encodedString = byteEncoding(string, version, correctionLevel)
     elif isKanji(string):
-        return kanjiEncoding(string, chooseVersion(string, '1000', correctionLevel), correctionLevel)
+        version = chooseVersion(string, '1000', correctionLevel)
+        encodedString = kanjiEncoding(string, version, correctionLevel)
     else:
         print('character set is not supported')
         sys.exit(1)
+        
+    messagePolynomial = createMessagePolynomial(encodedString)
+    generatorPolynomial = createGeneratorPolynomial(encodedString, version, correctionLevel)
+    errorCorrectionCodeword = generateErrorCorrectionCodeword(messagePolynomial, generatorPolynomial)
+    return encodedString
+
+def createMessagePolynomial(string):
+    polynomial = []
+    for i in range(0, len(string), 8):
+        polynomial.append([int(string[i:i+8], 2), len(string)//8-i//8-1])
+    return polynomial
+
+def createGeneratorPolynomial(string, version, correctionLevel):
+    numberOfCodewords = json.loads(open('numberOfCodewords.json','r').read())
+    generatorPolynomials = json.loads(open('generatorPolynoms.json','r').read())
+    degreeOfPolynomial = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][1]-2
+    return generatorPolynomials[degreeOfPolynomial]
+
+def generateErrorCorrectionCodeword(message, generator):
+    result = multiplyPolynomials(message, [generator[0]])
+    factor = antilog(message[0][0])
+    for i in range(len(message)):
+        modifiedGenerator = multiplyPolynomials(generator, [[factor,result[0][1]-generator[0][1]]])
+        modifiedGenerator = [[log(j[0]), j[1]] for j in modifiedGenerator]
+        result = subtract(result, modifiedGenerator)
+        factor = antilog(result[0][0])
+    return result
+
+def subtract(message, generator):
+    terms = message[0][1]+1
+    result = [[0, terms-1-i] for i in range(terms)]
+    for i in message:
+        result[terms-1-i[1]][0] = i[0]
+    for i in generator:
+        result[terms-1-i[1]][0] = result[terms-1-i[1]][0] ^ i[0]
+    result2 = []
+    for i in result:
+        if i[0] != 0:
+            result2.append(i)
+    return sorted(result2, key=lambda x:x[1], reverse=True)
 
 def isNumeric(string):
     for i in string:
@@ -48,7 +78,7 @@ def isNumeric(string):
     return True
 
 def isAlphanumeric(string):
-    liste = json.loads(open('alphanumericEncodingTable.json').read())
+    liste = json.loads(open('alphanumericEncodingTable.json', 'r').read())
     alphanumericCharSet = list(liste.keys())
     for i in string:
         if i not in alphanumericCharSet:
@@ -67,7 +97,7 @@ def isKanji(string):
     return False
 
 def chooseVersion(string, encoding, correctionLevel):
-    versionInfo = json.loads(open('QRVersionInfo.json').read())
+    versionInfo = json.loads(open('QRVersionInfo.json', 'r').read())
     i = 0
     if encoding == '0001':
         while len(string) > versionInfo[i*4+correctionLevel][2]:
@@ -118,7 +148,7 @@ def characterCount(length, version, mode):
             return f'{length:012b}'
 
 def addNeededZeros(bitString, version, correctionLevel):
-    numberOfCodewords = json.loads(open('numberOfCodewords.json').read())
+    numberOfCodewords = json.loads(open('numberOfCodewords.json', 'r').read())
     requiredBits = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][0]*8
     bitString += '0'*min(4, requiredBits-len(bitString))
     bitString += '0'*(8-len(bitString)%8)
@@ -129,21 +159,30 @@ def addNeededZeros(bitString, version, correctionLevel):
             bitString += '00010001'
     return bitString
 
-def multiplyPolynoms(polynom1, polynom2):
+def multiplyPolynomials(polynom1, polynom2):
     #a polynom (a^0x^2-a^1x^0) is represented as [[0,2],[1,0]]
     result = []
     for i in polynom1:
         for j in polynom2:
             result.append([i[0]+j[0], i[1]+j[1]])
     result2 = sorted(result, key=lambda x:x[1], reverse=True)
-    result = [[log(result2[0][0]), result2[0][1]]]
-    for i in result2[1:]:
-        if result[-1][1] == i[1]:
-            result[-1][0] = (result[-1][0]) ^ (log(i[0]))
-        else:
-            result.append([log(i[0]), i[1]])
-    for i in range(len(result)):
-        result[i][0] = antilog(result[i][0])
+    result = []
+    counter = 0
+    while counter < len(result2):
+        aktX = [result2[counter][1], []]
+        while result2[counter][1] == aktX[0]:
+            aktX[1].append(result2[counter][0])
+            counter += 1
+            if counter == len(result2):
+                break
+        result.append([antilog(xOr(aktX[1])), aktX[0]])
+        
+    return result
+
+def xOr(array):
+    result = log(array[0])
+    for i in range(1, len(array)):
+        result = log(array[i]) ^ result
     return result
 
 def log(number):
@@ -167,7 +206,7 @@ def numericEncoding(string, version, correctionLevel):
     return addNeededZeros('0001'+characterCount(len(string), version, '0001')+encodedString, version, correctionLevel)
 
 def alphanumericEncoding(string, version, correctionLevel):
-    table = json.loads(open('alphanumericEncodingTable.json').read())
+    table = json.loads(open('alphanumericEncodingTable.json', 'r').read())
     splitString = [string[start:start+2] for start in range(0, len(string), 2)]
     encodedString = ''
     for i in range(len(splitString)):
@@ -176,7 +215,6 @@ def alphanumericEncoding(string, version, correctionLevel):
         else:
             encodedString += f'{table[splitString[i][0]]:06b}'
     return addNeededZeros('0010'+characterCount(len(string), version, '0010')+encodedString, version, correctionLevel)
-    
 
 def byteEncoding(string, version, correctionLevel):
     encodedString = ''
