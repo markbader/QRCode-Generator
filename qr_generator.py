@@ -4,14 +4,18 @@ import json
 
 def main(string, correctionLevel):
     root = tkinter.Tk()
-    root.geometry('300x300')
+    root.geometry('400x400')
+    root.resizable(False,False)
     canvas = tkinter.Canvas(root,  bg='white')
     canvas.pack(fill='both', expand=1)
     createQRCodeIn(canvas, string, correctionLevel)
+    root.mainloop()
     return 0
 
 def createQRCodeIn(canvas, string, correctionLevel):
     qrCode = createQRCode(string, correctionLevel)
+    canvas.create_image(200,200, image=qrCode)
+    canvas.image = qrCode
     
 
 def createQRCode(string, correctionLevel):
@@ -30,11 +34,123 @@ def createQRCode(string, correctionLevel):
     else:
         print('character set is not supported')
         sys.exit(1)
-        
-    messagePolynomial = createMessagePolynomial(encodedString)
-    generatorPolynomial = createGeneratorPolynomial(encodedString, version, correctionLevel)
-    errorCorrectionCodeword = generateErrorCorrectionCodeword(messagePolynomial, generatorPolynomial)
-    return encodedString
+    data = divideInBlocks(version, correctionLevel, encodedString)
+    qrCode = drawQRCode(data, version, correctionLevel)
+    return qrCode
+
+def drawQRCode(data, version, correctionLevel):
+    size = (((version - 1) * 4) + 21)
+    image = [[42 for i in range(size)] for j in range(size)]
+    addToImage(image, [0, 0], [[10,10,10,10,10,10,10,11],[10,11,11,11,11,11,10,11],[10,11,10,10,10,11,10,11],[10,11,10,10,10,11,10,11],[10,11,10,10,10,11,10,11],[10,11,11,11,11,11,10,11],[10,10,10,10,10,10,10,11],[11,11,11,11,11,11,11,11]])
+    addToImage(image, [0,(((version-1)* 4)+ 21) - 8], [[11,10,10,10,10,10,10,10],[11,10,11,11,11,11,11,10],[11,10,11,10,10,10,11,10],[11,10,11,10,10,10,11,10],[11,10,11,10,10,10,11,10],[11,10,11,11,11,11,11,10],[11,10,10,10,10,10,10,10],[11,11,11,11,11,11,11,11]])
+    addToImage(image, [(((version-1)* 4)+ 21) - 8, 0], [[11,11,11,11,11,11,11,11],[10,10,10,10,10,10,10,11],[10,11,11,11,11,11,10,11],[10,11,10,10,10,11,10,11],[10,11,10,10,10,11,10,11],[10,11,10,10,10,11,10,11],[10,11,11,11,11,11,10,11],[10,10,10,10,10,10,10,11]])
+    insertAlignmentPattern(image, version)
+    addToImage(image, [8,6], ([[10],[11]]*(size//2))[:-15])
+    addToImage(image, [6,8], [([10,11]*(size//2))[:-15]])
+    addToImage(image, [0,8], [[2],[2],[2],[2],[2],[2]])#format information
+    addToImage(image, [size-8,8], [[2],[2],[2],[2],[2],[2],[2],[2]])
+    addToImage(image, [7,7], [[11,2],[2,2]])
+    addToImage(image, [8,0], [[2,2,2,2,2,2]])
+    addToImage(image, [8, size-8], [[10,2,2,2,2,2,2,2]])
+    if version >= 7: #version information
+        addToImage(image, [0,size-11], [[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]])
+        addToImage(image, [size-11,0], [[2,2,2,2,2,2],[2,2,2,2,2,2],[2,2,2,2,2,2]])
+    placeData(image, data)
+    print(id(image))
+    dataMasking(image.copy())
+    print(id(image))
+    img = tkinter.PhotoImage(width=size, height=size)
+    for i in range(len(image)):
+        for j in range(len(image)):
+            if image[i][j] == 1:
+                img.put('#ffffff', (i,j))
+            elif image[i][j] == 0:
+                img.put('#000000', (i,j))
+            elif image[i][j] == 11:
+                img.put('#ffffff', (i,j))
+            elif image[i][j] == 10:
+                img.put('#000000', (i,j))
+            elif image[i][j] == 2:
+                img.put('#0000ff', (i,j))
+            else:
+                img.put('#555555', (i,j))
+    img = img.zoom(400//size, 400//size)
+    return img
+
+def dataMasking(image):
+    print(id(image))
+    m0 = mask(image, lambda row,column: (row+column)%2 == 0)
+    m1 = mask(image, lambda row,column: (row)%2 == 0)
+    m2 = mask(image, lambda row,column: (column)%3 == 0)
+    m3 = mask(image, lambda row,column: (row+column)%3 == 0)
+    m4 = mask(image, lambda row,column: (row//2+column//3)%2 == 0)
+    m5 = mask(image, lambda row,column: (row*column)%2+(row+column)%3 == 0)
+    m6 = mask(image, lambda row,column: ((row*column)%2+(row*column)%3)%2 == 0)
+    m7 = mask(image, lambda row,column: ((row+column)%2+(row*column)%3)%2 == 0)
+
+    
+
+def mask(image, function):
+    maskImage = list(image)
+    for i in range(len(image)):
+        for j in range(len(image)):
+            if function(i, j):
+                if image[i][j] in [0,1]:
+                    maskImage[i][j] = (image[i][j]+1)%2
+    return maskImage
+
+
+def placeData(image, data):
+    size = len(image)
+    position = [size-1, size-1]
+    up = True
+    for i in data:
+        while not isAreaFree(image, [position, position]):
+            if up:
+                if position[0] % 2 == 0:
+                    position[0] -= 1
+                else:
+                    position[0] += 1
+                    position[1] -= 1
+                if position[1] == -1:
+                    position[0] -= 2
+                    position[1] = 0
+                    up = False
+            else:
+                if position[0] % 2 == 0:
+                    position[0] -= 1
+                else:
+                    position[0] += 1
+                    position[1] += 1
+                if position[1] == size:
+                    position[0] -= 2
+                    position[1] = size - 1
+                    up = True
+        addToImage(image, position, [[(int(i)+1)%2]])
+
+def insertAlignmentPattern(image, version):
+    alignmentPositions = json.loads(open('alignmentPattern.json','r').read())[str(version)]
+    alignmentPattern = [[10,10,10,10,10],[10,11,11,11,10],[10,11,10,11,10],[10,11,11,11,10],[10,10,10,10,10]]
+    for i in alignmentPositions:
+        for j in alignmentPositions:
+            if isAreaFree(image, [[i-2,j-2], [i+3,j+3]]):
+                addToImage(image, [i-2,j-2], alignmentPattern)
+            
+
+def addToImage(image, position, element):
+    #position is represented by [x, y]
+    for i in range(len(element)):
+        for j in range(len(element[0])):
+            image[position[0]+i][position[1]+j] = element[i][j]
+    return image
+
+def isAreaFree(image, area):
+    #area is [[x1, y1], [x2, y2]] with x1 < x2 and y1 < y2
+    for i in range(area[0][0], area[1][0]+1):
+        for j in range(area[0][1], area[1][1]+1):
+            if image[i][j] != 42:
+                return False
+    return True
 
 def createMessagePolynomial(string):
     polynomial = []
@@ -71,6 +187,55 @@ def subtract(message, generator):
             result2.append(i)
     return sorted(result2, key=lambda x:x[1], reverse=True)
 
+def divideInBlocks(version, correctionLevel, bitstring):
+    numberOfCodewords = json.loads(open('numberOfCodewords.json','r').read())
+    amountErrors = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][1]
+    blocksGroup1 = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][2]
+    amountGroup1 = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][3]
+    blocksGroup2 = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][4]
+    amountGroup2 = numberOfCodewords[str(version)+'-'+str('LMQH'[correctionLevel])][5]
+    group1 = [bitstring[start*amountGroup1*8:start*amountGroup1*8+amountGroup1*8] for start in range(blocksGroup1)]
+    group2 = [bitstring[blocksGroup1*amountGroup1*8+start*amountGroup2*8:blocksGroup1*amountGroup1*8+start*amountGroup2*8+amountGroup2*8] for start in range(blocksGroup2)]
+    data1 = []
+    data2 = []
+    error = []
+    for i in range(len(group1)):
+        message = createMessagePolynomial(group1[i])
+        data1.append([message[i][0] for i in range(len(message))])
+        generator = createGeneratorPolynomial(group1[i], version, correctionLevel)
+        errorWords = generateErrorCorrectionCodeword(message, generator)
+        error.append([errorWords[i][0] for i in range(len(errorWords))])
+    for i in range(len(group2)):
+        message = createMessagePolynomial(group2[i])
+        data2.append([message[i][0] for i in range(len(message))])
+        generator = createGeneratorPolynomial(group2[i], version, correctionLevel)
+        errorWords = generateErrorCorrectionCodeword(message, generator)
+        error.append([errorWords[i][0] for i in range(len(errorWords))])
+    data = createInterlacedData(data1, data2, error, version)
+    print(len(data)//8)
+    
+    return data
+    
+def createInterlacedData(group1, group2, errors, version):
+    remainderBits = json.loads(open('remainderBits.json','r').read())
+    groups = group1 + group2
+    data = ''
+    for i in range(len(groups[0])+1):
+        for j in range(len(groups)):
+            try:
+                data += f'{groups[j][i]:08b}'
+            except:
+                pass
+    for i in range(len(errors[0])):
+        for j in range(len(errors)):
+            try:
+                data += f'{groups[j][i]:08b}'
+            except:
+                pass
+    data += '0'*remainderBits[str(version)]
+    return data
+            
+
 def isNumeric(string):
     for i in string:
         if (ord(i)<48) or (ord(i)>57):
@@ -92,27 +257,19 @@ def isByte(string):
     except:
         return False
 
-def isKanji(string):
-    'TBD: implement Kanji encoding'
-    return False
-
 def chooseVersion(string, encoding, correctionLevel):
     versionInfo = json.loads(open('QRVersionInfo.json', 'r').read())
     i = 0
     if encoding == '0001':
-        while len(string) > versionInfo[i*4+correctionLevel][2]:
+        while len(string) >= versionInfo[i*4+correctionLevel][2]:
             i += 1
         return versionInfo[i*4][0]
     elif encoding == '0010':
-        while len(string) > versionInfo[i*4+correctionLevel][3]:
+        while len(string) >= versionInfo[i*4+correctionLevel][3]:
             i += 1
         return versionInfo[i*4][0]
     elif encoding == '0100':
-        while len(string) > versionInfo[i*4+correctionLevel][4]:
-            i += 1
-        return versionInfo[i*4][0]
-    elif encoding == '1000':
-        while len(string) > versionInfo[i*4+correctionLevel][5]:
+        while len(string) >= versionInfo[i*4+correctionLevel][4]:
             i += 1
         return versionInfo[i*4][0]
     else:
@@ -126,8 +283,6 @@ def characterCount(length, version, mode):
             return f'{length:09b}'
         elif mode == '0100':
             return f'{length:08b}'
-        elif mode == '1000':
-            return f'{length:08b}'
     elif version <= 26:
         if mode == '0001':
             return f'{length:012b}'
@@ -135,8 +290,6 @@ def characterCount(length, version, mode):
             return f'{length:011b}'
         elif mode == '0100':
             return f'{length:016b}'
-        elif mode == '1000':
-            return f'{length:010b}'
     else:
         if mode == '0001':
             return f'{length:014b}'
@@ -144,8 +297,6 @@ def characterCount(length, version, mode):
             return f'{length:013b}'
         elif mode == '0100':
             return f'{length:016b}'
-        elif mode == '1000':
-            return f'{length:012b}'
 
 def addNeededZeros(bitString, version, correctionLevel):
     numberOfCodewords = json.loads(open('numberOfCodewords.json', 'r').read())
@@ -157,6 +308,9 @@ def addNeededZeros(bitString, version, correctionLevel):
             bitString += '11101100'
         else:
             bitString += '00010001'
+    print(version)
+    print(correctionLevel)
+    print(len(bitString)//8)
     return bitString
 
 def multiplyPolynomials(polynom1, polynom2):
@@ -222,9 +376,5 @@ def byteEncoding(string, version, correctionLevel):
         encodedString += f'{i:08b}'
     return addNeededZeros('0100'+characterCount(len(string), version, '0100')+encodedString, version, correctionLevel)
 
-def kanjiEncoding(string, version, correctionLevel):
-    pass
-
-
 if __name__=="__main__":
-    main('HELLO WORLD', 1)
+    main('HELLO WORLD TEST', 2)
