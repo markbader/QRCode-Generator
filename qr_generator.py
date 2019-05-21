@@ -56,9 +56,7 @@ def drawQRCode(data, version, correctionLevel):
         addToImage(image, [0,size-11], [[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2],[2,2,2]])
         addToImage(image, [size-11,0], [[2,2,2,2,2,2],[2,2,2,2,2,2],[2,2,2,2,2,2]])
     placeData(image, data)
-    print(id(image))
-    dataMasking(image.copy())
-    print(id(image))
+    image = dataMasking(image)
     img = tkinter.PhotoImage(width=size, height=size)
     for i in range(len(image)):
         for j in range(len(image)):
@@ -78,20 +76,48 @@ def drawQRCode(data, version, correctionLevel):
     return img
 
 def dataMasking(image):
-    print(id(image))
-    m0 = mask(image, lambda row,column: (row+column)%2 == 0)
-    m1 = mask(image, lambda row,column: (row)%2 == 0)
-    m2 = mask(image, lambda row,column: (column)%3 == 0)
-    m3 = mask(image, lambda row,column: (row+column)%3 == 0)
-    m4 = mask(image, lambda row,column: (row//2+column//3)%2 == 0)
-    m5 = mask(image, lambda row,column: (row*column)%2+(row+column)%3 == 0)
-    m6 = mask(image, lambda row,column: ((row*column)%2+(row*column)%3)%2 == 0)
-    m7 = mask(image, lambda row,column: ((row+column)%2+(row*column)%3)%2 == 0)
+    masks = []
+    masks.append(mask(image, lambda row,column: (row+column)%2 == 0))
+    masks.append(mask(image, lambda row,column: (row)%2 == 0))
+    masks.append(mask(image, lambda row,column: (column)%3 == 0))
+    masks.append(mask(image, lambda row,column: (row+column)%3 == 0))
+    masks.append(mask(image, lambda row,column: (row//2+column//3)%2 == 0))
+    masks.append(mask(image, lambda row,column: (row*column)%2+(row+column)%3 == 0))
+    masks.append(mask(image, lambda row,column: ((row*column)%2+(row*column)%3)%2 == 0))
+    masks.append(mask(image, lambda row,column: ((row+column)%2+(row*column)%3)%2 == 0))
+    penalties = []
+    for i in range(len(masks)):
+        penalty = 0
+        penalty += rule1(masks[i])
+        penalty += rule2(masks[i])
+        penalty += rule3(masks[i])
+        penalty += rule4(masks[i])
+        penalties.append(penalty)
+    return masks[penalties.index(min(penalties))]
 
-    
+def rule1(image):
+    penalty = 0
+    aktList = []
+    for i in range(len(image)):
+        for j in range(len(image)):
+            if image[i][j] == 1:
+                pass
+    return 1
+
+def rule2(image):
+    return 1
+
+def rule3(image):
+    return 1
+
+def rule4(image):
+    return 1
+
+def deepCopy(listOfLists):
+    return [list(listOfLists[i]) for i in range(len(listOfLists))]
 
 def mask(image, function):
-    maskImage = list(image)
+    maskImage = deepCopy(image)
     for i in range(len(image)):
         for j in range(len(image)):
             if function(i, j):
@@ -212,8 +238,6 @@ def divideInBlocks(version, correctionLevel, bitstring):
         errorWords = generateErrorCorrectionCodeword(message, generator)
         error.append([errorWords[i][0] for i in range(len(errorWords))])
     data = createInterlacedData(data1, data2, error, version)
-    print(len(data)//8)
-    
     return data
     
 def createInterlacedData(group1, group2, errors, version):
@@ -308,9 +332,6 @@ def addNeededZeros(bitString, version, correctionLevel):
             bitString += '11101100'
         else:
             bitString += '00010001'
-    print(version)
-    print(correctionLevel)
-    print(len(bitString)//8)
     return bitString
 
 def multiplyPolynomials(polynom1, polynom2):
@@ -377,4 +398,4 @@ def byteEncoding(string, version, correctionLevel):
     return addNeededZeros('0100'+characterCount(len(string), version, '0100')+encodedString, version, correctionLevel)
 
 if __name__=="__main__":
-    main('HELLO WORLD TEST', 2)
+    main('Hello World!', 2)
